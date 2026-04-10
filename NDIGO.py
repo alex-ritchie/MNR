@@ -3,6 +3,8 @@ from sklearn.cluster import KMeans, MiniBatchKMeans
 from scipy.sparse.linalg import svds
 import scipy.optimize as sopt
 from copy import copy
+import gpytorch
+import torch
 
 def NDIGO(X, pair_ids, A0, w0, Z, G, Ci=None, stepsize=1, ss_decr=1, epoch_decr = 20, method='psgd', 
             max_iter=100, f_tol=1e-10, sigma=1.0, batch_size=16, decay=0, momentum=0, large=False):
@@ -179,7 +181,8 @@ def gen_ZG(X, R, sigma, Z=None, method='k-means', random_state=0):
             else:
                 kmeans = KMeans(n_clusters=R, n_init=100, random_state=random_state).fit(X)
                 Z = kmeans.cluster_centers_
-    G = gauss_kernal_mat(Z, Z, sigma=(2**0.5)*sigma);
+    #G = gauss_kernal_mat(Z, Z, sigma=(2**0.5)*sigma);
+    G = periodic_kernel_mat(Z, Z, sigma=1.0, period=1.0, lengthscale=1.0)
     return Z, G
 
 def k_centers(X, R, random_state=0):
@@ -208,7 +211,8 @@ def gen_C(X, pair_ids, Z, R, sigma):
     for i in  set(pair_ids):
         idx = pair_ids==i
         Xpair = X[idx,:];
-        K = gauss_kernal_mat(Xpair, Z, sigma)
+        #K = gauss_kernal_mat(Xpair, Z, sigma)
+        K = periodic_kernel_mat(Xpair, Z, sigma=1.0, period=1.0, lengthscale=1.0)
         C += np.outer(K[0,:],K[1,:]);
     return C
 
@@ -217,16 +221,19 @@ def gen_Ci(X, pair_ids, Z, R, sigma):
     for i in  set(pair_ids):
         idx = pair_ids==i
         Xpair = X[idx,:];
-        K = gauss_kernal_mat(Xpair, Z, sigma)
+        # K = gauss_kernal_mat(Xpair, Z, sigma)
+        K = periodic_kernel_mat(Xpair, Z, sigma=1.0, period=1.0, lengthscale=1.0)
         Ci[:,:,i] += np.outer(K[0,:],K[1,:]);
     return Ci
 
 def gen_mats_clustNP(X, pair_ids, R, sigma, Z):
-    G = gauss_kernal_mat(Z, Z, sigma=(2**0.5)*sigma);
+    #G = gauss_kernal_mat(Z, Z, sigma=(2**0.5)*sigma);
+    G = periodic_kernel_mat(Z, Z, sigma=1.0, period=1.0, lengthscale=1.0)
     C = np.zeros((R, R));
     for i in  set(pair_ids):
         idx = pair_ids==i
-        KernMat = gauss_kernal_mat(X[idx,], Z, sigma)
+        #KernMat = gauss_kernal_mat(X[idx,], Z, sigma)
+        KernMat = periodic_kernel_mat(X[idx,], Z, sigma=1.0, period=1.0, lengthscale=1.0)
         C += KernMat.T@KernMat;
     return G, C, Z
 
@@ -315,7 +322,24 @@ def gauss_kernal_mat(x1, x2, sigma=1):
 
     return RBF_Kernel
 
+import numpy as np
 
-
-
-
+def periodic_kernel_mat(x1, x2, sigma=1.0, period=1.0, lengthscale=1.0):
+    # Ensure inputs are 2D (N x D)
+    x1 = np.atleast_2d(x1)
+    x2 = np.atleast_2d(x2)
+    
+    # 1. Pairwise absolute difference |x1 - x2| using broadcasting
+    # (N, 1, D) - (1, M, D) yields (N, M, D)
+    dists = np.abs(x1[:, np.newaxis, :] - x2[np.newaxis, :, :])
+    
+    # 2. Apply the Periodic transformation
+    # Logic: exp(-2 * sin^2(pi * d / p) / l^2)
+    arg = np.pi * dists / period
+    sin_sq = np.sin(arg)**2
+    
+    # 3. Sum across dimensions (if multi-dimensional) and exponentiate
+    sum_sin_sq = np.sum(sin_sq, axis=-1)
+    kernel_mat = (sigma**2) * np.exp(-2 * sum_sin_sq / (lengthscale**2))
+    
+    return kernel_mat
