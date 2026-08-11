@@ -322,7 +322,7 @@ def gauss_kernal_mat(x1, x2, sigma=1):
 
     return RBF_Kernel
 
-import numpy as np
+
 
 def periodic_kernel_mat(x1, x2, sigma=1.0, period=1.0, lengthscale=1.0):
     # Ensure inputs are 2D (N x D)
@@ -343,3 +343,14 @@ def periodic_kernel_mat(x1, x2, sigma=1.0, period=1.0, lengthscale=1.0):
     kernel_mat = (sigma**2) * np.exp(-2 * sum_sin_sq / (lengthscale**2))
     
     return kernel_mat
+
+def linear_kernel_mat(x1, x2):
+    x1 = np.asarray(x1)
+    x2 = np.asarray(x2)
+
+    if len(x1.shape) < 2 or len(x2.shape) < 2:
+        Linear_Kernel = np.outer(x1, x2)
+    else:
+        Linear_Kernel = x1 @ x2.T
+
+    return Linear_Kernel
